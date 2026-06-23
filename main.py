@@ -1,8 +1,10 @@
+from typing import Optional
 from typing import Any
 from typing import Dict
 from typing import List
 from fastapi import HTTPException
 import requests
+import json
 from fastapi import FastAPI
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -22,8 +24,8 @@ class ChatRequest(BaseModel):
 
 class ProtectedChatRequest(BaseModel):
     prompt: str
-    chatHistory: List[Dict[str, Any]] = []
     userId: str
+    interactionId: Optional[str] = None
 
 
 app = FastAPI()
@@ -55,6 +57,19 @@ def search_playgrounds(lat: float, lon: float):
 
 import os
 import requests
+
+get_user_bookings_tool = {
+    "type": "function",
+    "name": "get_user_bookings",
+    "description": "Fetch the list of bookings for a specific user.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "userId": {"type": "string", "description": "The ID of the user"}
+        },
+        "required": ["userId"],
+    },
+}
 
 
 def get_user_bookings(user_id: str):
@@ -101,10 +116,10 @@ def chat_with_ai(request: ChatRequest):
 @app.post("/ai/assistant/protected")
 def chat_with_protected(request: ProtectedChatRequest):
     try:
-        # Get the data
+        # Get the data from the req body
         user_prompt = request.prompt
         user_id = request.userId
-        # user_chat_history = request.chatHistory
+        interaction_id = request.interactionId  # optional
 
         # Prompt Injection: Get the user_id to AI
         enriched_prompt = (
@@ -113,15 +128,52 @@ def chat_with_protected(request: ProtectedChatRequest):
             f"User Request: {user_prompt}"
         )
 
-        # Send request to the Gemini Model
-        response = client.models.generate_content(
-            model="gemini-3.1-flash-lite",
-            contents=enriched_prompt,
-            config={"tools": [get_user_bookings]},
-        )
+        # Config for the gemini request
+        ai_request_params = {
+            "model": "gemini-3.1-flash-lite",
+            "input": enriched_prompt,
+            "tools": [get_user_bookings_tool],
+        }
 
-        # Send the response as json
-        return {"message": response.text}
+        if interaction_id:
+            ai_request_params["previous_interaction_id"] = interaction_id
+
+        # Send the request to gemini
+        interaction = client.interactions.create(**ai_request_params)
+
+        # Check if the interaction contains steps
+        if interaction.steps:
+            # Iterate for steps
+            for step in interaction.steps:
+                # If the step type is function call and the name is get_user_bookings
+                if step.type == "function_call" and step.name == "get_user_bookings":
+                    # Get the user_id to search
+                    uid_to_search = step.arguments.get("userId")
+
+                    # Execute the function
+                    print(f"Executing tool for user: {uid_to_search}")
+                    booking_data = get_user_bookings(uid_to_search)
+
+                    # Return the booking data to AI
+                    interaction = client.interactions.create(
+                        model="gemini-3.1-flash-lite",
+                        tools=[get_user_bookings_tool],
+                        previous_interaction_id=interaction.id,
+                        input=[
+                            {
+                                "type": "function_result",
+                                "call_id": step.id,
+                                "name": step.name,
+                                "result": [
+                                    {"type": "text", "text": json.dumps(booking_data)}
+                                ],
+                            }
+                        ],
+                    )
+                    break
+
+        # Return the final response to the user
+        return {"message": interaction.output_text, "interactionId": interaction.id}
 
     except Exception as e:
         print(f"GenAI Protected Route Error: {e}")
