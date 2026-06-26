@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from typing import Optional
 from dotenv import load_dotenv
 from google import genai
+from datetime import datetime
 
 
 # ---- System Instruction ----
@@ -132,20 +133,29 @@ def sanitize_for_gemini(obj):
 @router.post("/chat")
 def chat_with_ai(request: ChatRequest):
     try:
+        # Get Current Date and Time
+        current_time = datetime.now().strftime("%A, %Y-%m-%d %H:%M:%S")
+        
+        # Add Current Date and Time to System Instruction
+        DYNAMIC_SYSTEM_INSTRUCTION = (
+            SYSTEM_INSTRUCTION
+            + f"\n\nCRITICAL CONTEXT: The current system date and time is {current_time}. Use this as the baseline to calculate relative dates like 'today', 'tomorrow', 'next week', etc."
+        )
+
         if request.interaction_id:
             response = client.interactions.create(
                 model="gemini-3.1-flash-lite",
                 previous_interaction_id=request.interaction_id,
                 input=request.prompt,
                 tools=[search_playgrounds_tool, check_bookings_tool, add_bookings_tool],
-                system_instruction=SYSTEM_INSTRUCTION,
+                system_instruction=DYNAMIC_SYSTEM_INSTRUCTION,
             )
         else:
             response = client.interactions.create(
                 model="gemini-3.1-flash-lite",
                 input=request.prompt,
                 tools=[search_playgrounds_tool, check_bookings_tool, add_bookings_tool],
-                system_instruction=SYSTEM_INSTRUCTION,
+                system_instruction=DYNAMIC_SYSTEM_INSTRUCTION,
             )
 
         while True:
@@ -195,7 +205,7 @@ def chat_with_ai(request: ChatRequest):
                         check_bookings_tool,
                         add_bookings_tool,
                     ],
-                    system_instruction=SYSTEM_INSTRUCTION,
+                    system_instruction=DYNAMIC_SYSTEM_INSTRUCTION,
                 )
 
             elif fc_step and fc_step.name == "check_bookings":
@@ -240,7 +250,7 @@ def chat_with_ai(request: ChatRequest):
                         check_bookings_tool,
                         add_bookings_tool,
                     ],
-                    system_instruction=SYSTEM_INSTRUCTION,
+                    system_instruction=DYNAMIC_SYSTEM_INSTRUCTION,
                 )
 
             elif fc_step and fc_step.name == "add_bookings":
@@ -312,7 +322,7 @@ def chat_with_ai(request: ChatRequest):
                         check_bookings_tool,
                         add_bookings_tool,
                     ],
-                    system_instruction=SYSTEM_INSTRUCTION,
+                    system_instruction=DYNAMIC_SYSTEM_INSTRUCTION,
                 )
 
         return {
