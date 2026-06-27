@@ -1,4 +1,5 @@
 import httpx
+import os
 from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import Optional
@@ -135,7 +136,7 @@ def chat_with_ai(request: ChatRequest):
     try:
         # Get Current Date and Time
         current_time = datetime.now().strftime("%A, %Y-%m-%d %H:%M:%S")
-        
+
         # Add Current Date and Time to System Instruction
         DYNAMIC_SYSTEM_INSTRUCTION = (
             SYSTEM_INSTRUCTION
@@ -172,10 +173,17 @@ def chat_with_ai(request: ChatRequest):
                 lon = fc_step.arguments.get("lon")
                 print(f"--> AI requested backend data for Lat: {lat}, Lon: {lon}")
 
-                express_url = f"http://localhost:3000/arenas?lat={lat}&lon={lon}"
+                express_url = (
+                    f"http://localhost:3000/internal/arenas?lat={lat}&lon={lon}"
+                )
+
+                x_ray_secret = os.getenv("INTERNAL_SERVER_KEY")
 
                 try:
-                    express_response = httpx.get(express_url, timeout=10.0)
+                    headers = {"x-internal-secret": x_ray_secret}
+                    express_response = httpx.get(
+                        express_url, headers=headers, timeout=10.0
+                    )
                     express_response.raise_for_status()
 
                     backend_data = express_response.json()
@@ -215,10 +223,16 @@ def chat_with_ai(request: ChatRequest):
                     f"--> AI checking availability for Court ID: {court_id} on {date}"
                 )
 
-                express_url = f"http://localhost:3000/bookings/availability?courtId={court_id}&date={date}"
+                express_url = f"http://localhost:3000/internal/availability?courtId={court_id}&date={date}"
+
+                # Send the internal api key as x ray secret
+                x_ray_secret = os.getenv("INTERNAL_SERVER_KEY")
 
                 try:
-                    express_response = httpx.get(express_url, timeout=10.0)
+                    headers = {"x-internal-secret": x_ray_secret}
+                    express_response = httpx.get(
+                        express_url, headers=headers, timeout=10.0
+                    )
                     express_response.raise_for_status()
 
                     raw_data = express_response.json()
@@ -271,12 +285,16 @@ def chat_with_ai(request: ChatRequest):
                     print(f"--> AI adding booking for Court ID: {court_id} on {date}")
                     print(f"--> Extracted Times: Start: {start_time}, End: {end_time}")
 
-                    express_url = f"http://localhost:3000/bookings/"
+                    express_url = f"http://localhost:3000/internal/add-booking"
+
+                    # Send the internal api key as x ray secret
+                    x_ray_secret = os.getenv("INTERNAL_SERVER_KEY")
 
                     try:
 
                         headers = {
                             "Authorization": f"Bearer {request.token}",
+                            "x-internal-secret": x_ray_secret,
                             "Content-Type": "application/json",
                         }
 

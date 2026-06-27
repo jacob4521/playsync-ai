@@ -1,5 +1,9 @@
 from sys import prefix
 from fastapi import FastAPI
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 from app.api import router as api_router
 
 
